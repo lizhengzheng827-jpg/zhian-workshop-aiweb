@@ -7,4 +7,4 @@ instance/
 *.log
 .idea/
 *.db
-instance/
+tmp/
