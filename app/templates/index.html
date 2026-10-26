@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>智安工坊｜AI 安全开发协作平台</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='insights.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="brand-mark">智</div>
+      <div class="brand-copy"><span>智安工坊</span><small>CodeGuard AI 安全审计引擎</small></div>
+    </div>
+    <div class="top-meta"><span id="providerStatus">DeepSeek 建议：未配置</span><span class="dot"></span><span>本地扫描模式</span></div>
+  </header>
+  <main class="shell">
+    <section class="hero">
+      <div><p class="eyebrow">面向大学生与教师的 AI 安全开发协作平台</p><h1>在提交代码之前，先看见敏感信息泄露风险</h1><p class="hero-note">从本地检测、AI 解释到人工复核和报告归档，支持 Python、Java、C++、JavaScript 等代码。系统只提供检测、解释与修复示例，不会自动修改源代码。</p></div>
+      <div class="hero-chip"><span class="chip-number">4</span><span>级风险分级<br><small>严重 / 高 / 中 / 低</small></span></div>
+    </section>
+    <section class="workbench">
+      <aside class="input-panel">
+        <div class="panel-title"><span>开始审计</span><small>选择一种输入方式</small></div>
+        <div class="tabs"><button class="tab active" data-tab="paste">粘贴代码</button><button class="tab" data-tab="zip">上传 ZIP</button></div>
+        <div id="pastePane" class="tab-pane active">
+          <label>文件名</label><input id="fileName" value="demo.py" aria-label="文件名">
+          <label>代码内容</label><textarea id="codeInput" spellcheck="false" placeholder="在这里粘贴待审计代码..."></textarea>
+          <button id="scanText" class="primary-btn">开始检测 <span>→</span></button>
+        </div>
+        <div id="zipPane" class="tab-pane">
+          <div class="dropzone" id="dropzone"><div class="upload-icon">↑</div><strong>选择 ZIP 压缩包</strong><p>支持多文件项目，最大 20 MB</p><input id="zipInput" type="file" accept=".zip"></div>
+          <button id="scanZip" class="primary-btn" disabled>扫描压缩包 <span>→</span></button>
+        </div>
+        <div class="rules-note"><strong>检测范围</strong><span>API Key、Access Key / Secret Key、数据库账号密码、JWT Token、邮箱、手机号和疑似高熵凭据</span></div>
+      </aside>
+      <section class="results-panel">
+        <div class="empty-state" id="emptyState"><div class="empty-icon">⌕</div><h2>等待开始检测</h2><p>粘贴一段代码，或上传 ZIP 项目<br>结果会在这里显示</p></div>
+        <div id="results" class="results hidden">
+          <div class="result-head"><div><p class="eyebrow">审计结果</p><h2 id="sourceName">代码片段</h2><p id="scanMeta"></p></div><button id="reportBtn" class="outline-btn">导出 PDF 报告</button></div>
+          <div class="metrics"><div class="metric"><span>安全评分</span><strong id="score">--</strong><small>满分 100</small></div><div class="metric"><span>发现问题</span><strong id="findingCount">--</strong><small>条风险线索</small></div><div class="metric"><span>待处理</span><strong id="pendingCount">--</strong><small>需要人工确认</small></div><div class="metric"><span>扫描文件</span><strong id="fileCount">--</strong><small>个文件</small></div></div>
+          <div class="insight-grid">
+            <div class="insight-card"><div class="card-head"><span>项目洞察</span><small>工程可追溯性</small></div><div id="insightContent" class="insight-content">等待扫描结果</div><button id="planBtn" class="outline-btn insight-btn" disabled>生成项目整改计划</button><div id="planResult" class="plan-result hidden"></div></div>
+            <div class="insight-card"><div class="card-head"><span>扫描历史</span><small id="historyCount">0 次</small></div><div id="historyList" class="history-list"><span class="muted">完成多次扫描后可进行对比</span></div></div>
+          </div>
+          <div class="result-grid"><div class="code-card"><div class="card-head"><span>风险代码位置</span><small id="selectedLocation">请选择右侧问题</small></div><pre id="codeView" class="code-view">暂无选中问题</pre><div class="code-foot"><span id="codeCategory">风险类型</span><span id="codeLine">行号 --</span></div></div><div class="finding-card"><div class="card-head"><span>问题清单</span><small id="filterSummary">全部</small></div><div id="findingList" class="finding-list"></div></div></div>
+          <div class="advice-card hidden" id="adviceCard"><div class="card-head"><span>修复建议</span><span id="adviceSource" class="source-label">内置建议</span></div><div id="adviceText"></div><div class="example-box"><div>正确示例</div><pre id="exampleCode"></pre></div></div>
+          <div class="privacy-bar">系统不会自动修改源代码。调用 DeepSeek 时只发送临时脱敏上下文，原始代码仍留在本地。</div>
+        </div>
+      </section>
+    </section>
+  </main>
+  <div id="toast" class="toast"></div>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
+
