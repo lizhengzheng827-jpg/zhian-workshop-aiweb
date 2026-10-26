@@ -193,7 +193,7 @@ def local_git_evidence(project_path: str | Path) -> dict:
     """Summarise the repository that owns the running application."""
 
     path = Path(project_path)
-    result = {"repository": str(path), "initialized": False, "commit_count": 0, "authors": [], "recent_commits": [], "warning": "尚未初始化 Git。"}
+    result = {"repository": path.name, "initialized": False, "commit_count": 0, "authors": [], "recent_commits": [], "warning": "尚未初始化 Git。"}
     if not (path / ".git").exists():
         return result
     try:
