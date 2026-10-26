@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -59,6 +62,55 @@ def _masked_context(finding: Finding) -> str:
     )
 
 
+def _post_chat(cfg: dict, payload: dict) -> dict:
+    """POST to DeepSeek, using Windows curl when Python TLS is unreliable."""
+
+    encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    curl_path = shutil.which("curl.exe") or shutil.which("curl")
+    if os.name == "nt" and curl_path:
+        payload_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as payload_file:
+                payload_file.write(encoded)
+                payload_path = payload_file.name.replace("\\", "/")
+            config = (
+                f'url = "{cfg["base_url"]}/chat/completions"\n'
+                'request = "POST"\n'
+                f'header = "Authorization: Bearer {cfg["api_key"]}"\n'
+                'header = "Content-Type: application/json"\n'
+                f'data-binary = "@{payload_path}"\n'
+            )
+            completed = subprocess.run(
+                [curl_path, "--silent", "--show-error", "--fail-with-body", "--config", "-"],
+                input=config,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=40,
+                check=False,
+            )
+            if completed.returncode != 0:
+                detail = (completed.stderr or completed.stdout or "未知网络错误").strip()[:180]
+                raise RuntimeError(f"curl 请求失败：{detail}")
+            return json.loads(completed.stdout)
+        finally:
+            if payload_path:
+                try:
+                    os.unlink(payload_path)
+                except OSError:
+                    pass
+
+    request = urllib.request.Request(
+        f"{cfg['base_url']}/chat/completions",
+        data=encoded,
+        headers={"Authorization": f"Bearer {cfg['api_key']}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=25) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 def ask_deepseek(finding: Finding) -> dict:
     cfg = _config()
     if not cfg["api_key"]:
@@ -68,23 +120,15 @@ def ask_deepseek(finding: Finding) -> dict:
         "不要要求用户把真实密钥发给你，不要声称已经修改源码。只返回 JSON，字段为 advice 和 example。\n\n"
         + _masked_context(finding)
     )
-    payload = json.dumps({
-        "model": cfg["model"],
-        "temperature": 0.2,
-        "messages": [
-            {"role": "system", "content": "你提供教育性代码安全建议，不能执行或修改用户代码。"},
-            {"role": "user", "content": prompt},
-        ],
-    }).encode("utf-8")
-    request = urllib.request.Request(
-        f"{cfg['base_url']}/chat/completions",
-        data=payload,
-        headers={"Authorization": f"Bearer {cfg['api_key']}", "Content-Type": "application/json"},
-        method="POST",
-    )
     try:
-        with urllib.request.urlopen(request, timeout=25) as response:
-            body = json.loads(response.read().decode("utf-8"))
+        body = _post_chat(cfg, {
+            "model": cfg["model"],
+            "temperature": 0.2,
+            "messages": [
+                {"role": "system", "content": "你提供教育性代码安全建议，不能执行或修改用户代码。"},
+                {"role": "user", "content": prompt},
+            ],
+        })
         content = body["choices"][0]["message"]["content"].strip()
         if content.startswith("```"):
             content = content.strip("`").replace("json", "", 1).strip()
@@ -96,7 +140,7 @@ def ask_deepseek(finding: Finding) -> dict:
             "example": str(parsed.get("example") or finding.example_code),
             "privacy_note": "发送给 DeepSeek 的临时上下文已脱敏，原始源码未被修改。",
         }
-    except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError, json.JSONDecodeError) as exc:
+    except (urllib.error.URLError, TimeoutError, RuntimeError, KeyError, IndexError, ValueError, json.JSONDecodeError) as exc:
         fallback = _fallback(finding)
         fallback["privacy_note"] = f"DeepSeek 暂时不可用，已使用内置建议（{type(exc).__name__}）。"
         return fallback
@@ -136,23 +180,15 @@ def ask_deepseek_plan(result: ScanResult) -> dict:
         "只返回 JSON，字段为 advice 和 example。advice 写分优先级的整改顺序，example 写 4 条以内的复核清单。\n\n"
         + context
     )
-    payload = json.dumps({
-        "model": cfg["model"],
-        "temperature": 0.2,
-        "messages": [
-            {"role": "system", "content": "你提供教育性代码安全整改建议，不能执行或修改用户代码。"},
-            {"role": "user", "content": prompt},
-        ],
-    }).encode("utf-8")
-    request = urllib.request.Request(
-        f"{cfg['base_url']}/chat/completions",
-        data=payload,
-        headers={"Authorization": f"Bearer {cfg['api_key']}", "Content-Type": "application/json"},
-        method="POST",
-    )
     try:
-        with urllib.request.urlopen(request, timeout=25) as response:
-            body = json.loads(response.read().decode("utf-8"))
+        body = _post_chat(cfg, {
+            "model": cfg["model"],
+            "temperature": 0.2,
+            "messages": [
+                {"role": "system", "content": "你提供教育性代码安全整改建议，不能执行或修改用户代码。"},
+                {"role": "user", "content": prompt},
+            ],
+        })
         content = body["choices"][0]["message"]["content"].strip()
         if content.startswith("```"):
             content = content.strip("`").replace("json", "", 1).strip()
@@ -164,7 +200,7 @@ def ask_deepseek_plan(result: ScanResult) -> dict:
             "example": str(parsed.get("example") or _local_plan(result)["example"]),
             "privacy_note": "发送给 DeepSeek 的内容只有已脱敏的风险摘要，原始源码没有被修改。",
         }
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, KeyError, IndexError, ValueError, json.JSONDecodeError) as exc:
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, RuntimeError, KeyError, IndexError, ValueError, json.JSONDecodeError) as exc:
         fallback = _local_plan(result)
         fallback["privacy_note"] = f"DeepSeek 暂时不可用，已使用内置整改计划（{type(exc).__name__}）。"
         return fallback
