@@ -89,17 +89,19 @@ def _post_chat(cfg: dict, payload: dict) -> dict:
             attempts = [None] + addresses[:6]
             last_detail = "未知网络错误"
             for address in attempts:
-                resolve_line = f'resolve = "{host}:{port}:{address}"\n' if address else ""
                 config = (
                     f'url = "{cfg["base_url"]}/chat/completions"\n'
-                    f'{resolve_line}'
                     'request = "POST"\n'
                     f'header = "Authorization: Bearer {cfg["api_key"]}"\n'
                     'header = "Content-Type: application/json"\n'
                     f'data-binary = "@{payload_path}"\n'
                 )
+                curl_args = [curl_path, "--silent", "--show-error", "--fail-with-body", "--connect-timeout", "8", "--max-time", "20"]
+                if address:
+                    curl_args.extend(["--resolve", f"{host}:{port}:{address}"])
+                curl_args.extend(["--config", "-"])
                 completed = subprocess.run(
-                    [curl_path, "--silent", "--show-error", "--fail-with-body", "--connect-timeout", "8", "--max-time", "20", "--config", "-"],
+                    curl_args,
                     input=config,
                     capture_output=True,
                     text=True,
