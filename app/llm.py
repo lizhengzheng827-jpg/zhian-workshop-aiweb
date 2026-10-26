@@ -6,24 +6,32 @@ import json
 import os
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from .scanner import Finding, ScanResult
 
 try:
-    from dotenv import load_dotenv
-
-    load_dotenv()
+    from dotenv import dotenv_values
 except ImportError:
     # The app still works with process-level environment variables when the
     # optional convenience package is unavailable.
-    pass
+    dotenv_values = None
 
 
 def _config() -> dict:
+    file_values = {}
+    if dotenv_values is not None:
+        env_path = Path(__file__).resolve().parents[1] / ".env"
+        if env_path.exists():
+            file_values = dotenv_values(env_path)
+
+    def value(name: str, default: str = "") -> str:
+        return (os.getenv(name) or file_values.get(name) or default).strip()
+
     return {
-        "api_key": os.getenv("DEEPSEEK_API_KEY", "").strip(),
-        "base_url": os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/"),
-        "model": os.getenv("DEEPSEEK_MODEL", "deepseek-chat").strip() or "deepseek-chat",
+        "api_key": value("DEEPSEEK_API_KEY"),
+        "base_url": value("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/"),
+        "model": value("DEEPSEEK_MODEL", "deepseek-chat") or "deepseek-chat",
     }
 
 
