@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import socket
 import subprocess
 import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 from .scanner import Finding, ScanResult
 
@@ -73,27 +75,48 @@ def _post_chat(cfg: dict, payload: dict) -> dict:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as payload_file:
                 payload_file.write(encoded)
                 payload_path = payload_file.name.replace("\\", "/")
-            config = (
-                f'url = "{cfg["base_url"]}/chat/completions"\n'
-                'request = "POST"\n'
-                f'header = "Authorization: Bearer {cfg["api_key"]}"\n'
-                'header = "Content-Type: application/json"\n'
-                f'data-binary = "@{payload_path}"\n'
-            )
-            completed = subprocess.run(
-                [curl_path, "--silent", "--show-error", "--fail-with-body", "--config", "-"],
-                input=config,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=40,
-                check=False,
-            )
-            if completed.returncode != 0:
-                detail = (completed.stderr or completed.stdout or "未知网络错误").strip()[:180]
-                raise RuntimeError(f"curl 请求失败：{detail}")
-            return json.loads(completed.stdout)
+            parsed_url = urlparse(cfg["base_url"])
+            host = parsed_url.hostname or "api.deepseek.com"
+            port = parsed_url.port or 443
+            try:
+                addresses = list(dict.fromkeys(
+                    item[4][0]
+                    for item in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+                    if ":" not in item[4][0]
+                ))
+            except OSError:
+                addresses = []
+            attempts = [None] + addresses[:6]
+            last_detail = "未知网络错误"
+            for address in attempts:
+                resolve_line = f'resolve = "{host}:{port}:{address}"\n' if address else ""
+                config = (
+                    f'url = "{cfg["base_url"]}/chat/completions"\n'
+                    f'{resolve_line}'
+                    'request = "POST"\n'
+                    f'header = "Authorization: Bearer {cfg["api_key"]}"\n'
+                    'header = "Content-Type: application/json"\n'
+                    f'data-binary = "@{payload_path}"\n'
+                )
+                completed = subprocess.run(
+                    [curl_path, "--silent", "--show-error", "--fail-with-body", "--connect-timeout", "8", "--max-time", "20", "--config", "-"],
+                    input=config,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=25,
+                    check=False,
+                )
+                if completed.returncode == 0:
+                    return json.loads(completed.stdout)
+                body = (completed.stdout or "").strip()
+                last_detail = (completed.stderr or body or "未知网络错误").strip()[:180]
+                # An HTTP response means the address is reachable. Do not
+                # retry an authentication, quota, or model error on other IPs.
+                if body.startswith("{") or body.startswith("["):
+                    break
+            raise RuntimeError(f"curl 请求失败：{last_detail}")
         finally:
             if payload_path:
                 try:
